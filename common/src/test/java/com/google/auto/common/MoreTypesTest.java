@@ -29,17 +29,10 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.testing.EquivalenceTester;
 import com.google.testing.compile.CompilationRule;
-
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
 import java.lang.annotation.Annotation;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -55,6 +48,10 @@ import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 @RunWith(JUnit4.class)
 public class MoreTypesTest {
@@ -78,6 +75,12 @@ public class MoreTypesTest {
     DeclaredType mapOfObjectToObjectType =
         types.getDeclaredType(mapElement, objectType, objectType);
     TypeMirror mapType = mapElement.asType();
+    DeclaredType setOfSetOfObject =
+        types.getDeclaredType(setElement, types.getDeclaredType(setElement, objectType));
+    DeclaredType setOfSetOfString =
+        types.getDeclaredType(setElement, types.getDeclaredType(setElement, stringType));
+    DeclaredType setOfSetOfSetOfObject = types.getDeclaredType(setElement, setOfSetOfObject);
+    DeclaredType setOfSetOfSetOfString = types.getDeclaredType(setElement, setOfSetOfString);
     WildcardType wildcard = types.getWildcardType(null, null);
     EquivalenceTester<TypeMirror> tester = EquivalenceTester.<TypeMirror>of(MoreTypes.equivalence())
         .addEquivalenceGroup(types.getNullType())
@@ -102,6 +105,10 @@ public class MoreTypesTest {
         .addEquivalenceGroup(types.getDeclaredType(mapElement, objectType, stringType))
         .addEquivalenceGroup(types.getDeclaredType(mapElement, stringType, objectType))
         .addEquivalenceGroup(types.getDeclaredType(mapElement, stringType, stringType))
+        .addEquivalenceGroup(setOfSetOfObject)
+        .addEquivalenceGroup(setOfSetOfString)
+        .addEquivalenceGroup(setOfSetOfSetOfObject)
+        .addEquivalenceGroup(setOfSetOfSetOfString)
         .addEquivalenceGroup(wildcard)
         // ? extends Object
         .addEquivalenceGroup(types.getWildcardType(objectType, null))

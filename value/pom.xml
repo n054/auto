@@ -26,14 +26,16 @@
 
   <groupId>com.google.auto.value</groupId>
   <artifactId>auto-value</artifactId>
-  <version>1.2-SNAPSHOT</version>
+  <version>1.4-SNAPSHOT</version>
   <name>AutoValue</name>
   <description>
     Immutable value-type code generation for Java 1.6+.
   </description>
 
   <properties>
-    <guava.version>18.0</guava.version>
+    <guava.version>19.0</guava.version>
+    <compile.testing.version>0.10</compile.testing.version>
+    <exclude.tests>this-matches-nothing</exclude.tests>
   </properties>
   <scm>
     <url>http://github.com/google/auto</url>
@@ -46,7 +48,7 @@
     <dependency>
       <groupId>com.google.auto</groupId>
       <artifactId>auto-common</artifactId>
-      <version>1.0-SNAPSHOT</version>
+      <version>0.8</version>
     </dependency>
     <dependency>
       <groupId>com.google.auto.service</groupId>
@@ -61,7 +63,12 @@
     <dependency>
       <groupId>org.ow2.asm</groupId>
       <artifactId>asm</artifactId>
-      <version>4.1</version>
+      <version>5.0.4</version>
+    </dependency>
+    <dependency>
+      <groupId>com.squareup</groupId>
+      <artifactId>javapoet</artifactId>
+      <version>1.7.0</version>
     </dependency>
     <!-- test dependencies -->
     <dependency>
@@ -77,12 +84,6 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>com.google.testing.compile</groupId>
-      <artifactId>compile-testing</artifactId>
-      <version>0.6</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.11</version>
@@ -91,7 +92,13 @@
     <dependency>
       <groupId>com.google.truth</groupId>
       <artifactId>truth</artifactId>
-      <version>0.25</version>
+      <version>0.30</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.testing.compile</groupId>
+      <artifactId>compile-testing</artifactId>
+      <version>${compile.testing.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -104,8 +111,18 @@
     </resources>
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.1</version>
+        <configuration>
+          <testExcludes>
+            <exclude>${exclude.tests}</exclude>
+          </testExcludes>
+        </configuration>
+      </plugin>
+      <plugin>
         <artifactId>maven-jar-plugin</artifactId>
-        <version>2.5</version>
+        <version>2.6</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -150,10 +167,14 @@
                 </relocation>
                 <relocation>
                   <pattern>com.google</pattern>
-                  <shadedPattern>autovalue.shaded.com.google.common$</shadedPattern>
+                  <shadedPattern>autovalue.shaded.com.google$</shadedPattern>
                   <excludes>
                     <exclude>com.google.auto.value.**</exclude>
                   </excludes>
+                </relocation>
+                <relocation>
+                  <pattern>com.squareup.javapoet</pattern>
+                  <shadedPattern>autovalue.shaded.com.squareup.javapoet$</shadedPattern>
                 </relocation>
               </relocations>
             </configuration>
@@ -162,4 +183,27 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>disable-java8-doclint</id>
+      <activation>
+        <jdk>[1.8,)</jdk>
+      </activation>
+      <properties>
+        <additionalparam>-Xdoclint:none</additionalparam>
+      </properties>
+    </profile>
+    <profile>
+      <!-- If we're testing on an old JDK, we can't use the latest Compile Testing,
+           and we can't build tests that require it. -->
+      <id>older-compile-testing</id>
+      <activation>
+        <jdk>(,1.7]</jdk>
+      </activation>
+      <properties>
+        <compile.testing.version>0.9</compile.testing.version>
+        <exclude.tests>**/TypeSimplifierTest.java</exclude.tests>
+      </properties>
+    </profile>
+  </profiles>
 </project>

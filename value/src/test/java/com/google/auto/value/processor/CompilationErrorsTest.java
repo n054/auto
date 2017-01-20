@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Guava Authors
+ * Copyright (C) 2012 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,11 @@
  */
 package com.google.auto.value.processor;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import com.google.common.base.Joiner;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
@@ -22,16 +27,12 @@ import com.google.common.collect.ImmutableTable;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Table;
 import com.google.common.io.Files;
-
-import junit.framework.TestCase;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.regex.Pattern;
-
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -40,11 +41,19 @@ import javax.tools.JavaFileObject.Kind;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * @author emcmanus@google.com (Éamonn McManus)
  */
-public class CompilationErrorsTest extends TestCase {
+@RunWith(JUnit4.class)
+public class CompilationErrorsTest {
+  @Rule public TemporaryFolder temporaryFolder = new TemporaryFolder();
 
   // TODO(emcmanus): add tests for:
   // - superclass in a different package with nonpublic abstract methods (this must fail but
@@ -55,18 +64,12 @@ public class CompilationErrorsTest extends TestCase {
   private StandardJavaFileManager fileManager;
   private File tmpDir;
 
-  @Override
-  protected void setUp() {
+  @Before
+  public void setUp() {
     javac = ToolProvider.getSystemJavaCompiler();
     diagnosticCollector = new DiagnosticCollector<JavaFileObject>();
     fileManager = javac.getStandardFileManager(diagnosticCollector, null, null);
-    tmpDir = Files.createTempDir();
-  }
-
-  @Override
-  protected void tearDown() {
-    boolean deletedAll = deleteDirectory(tmpDir);
-    assertTrue(deletedAll);
+    tmpDir = temporaryFolder.getRoot();
   }
 
   // Files.deleteRecursively has been deprecated because Dr Evil could put a symlink in the
@@ -91,6 +94,7 @@ public class CompilationErrorsTest extends TestCase {
   }
 
   // Ensure that assertCompilationFails does in fact throw AssertionError when compilation succeeds.
+  @Test
   public void testAssertCompilationFails() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",
@@ -111,6 +115,7 @@ public class CompilationErrorsTest extends TestCase {
     assertFalse(compiled);
   }
 
+  @Test
   public void testNoWarningsFromGenerics() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",
@@ -127,8 +132,9 @@ public class CompilationErrorsTest extends TestCase {
   }
 
   private static final Pattern CANNOT_HAVE_NON_PROPERTIES = Pattern.compile(
-      "@AutoValue classes cannot have abstract methods other than property getters");
+      "Abstract method is neither a property getter nor a Builder converter");
 
+  @Test
   public void testAbstractVoid() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",
@@ -145,6 +151,7 @@ public class CompilationErrorsTest extends TestCase {
     assertCompilationResultIs(expectedDiagnostics, ImmutableList.of(testSourceCode));
   }
 
+  @Test
   public void testAbstractWithParams() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",
@@ -161,6 +168,7 @@ public class CompilationErrorsTest extends TestCase {
     assertCompilationResultIs(expectedDiagnostics, ImmutableList.of(testSourceCode));
   }
 
+  @Test
   public void testPrimitiveArrayWarning() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",
@@ -179,6 +187,7 @@ public class CompilationErrorsTest extends TestCase {
     assertCompilationResultIs(expectedDiagnostics, ImmutableList.of(testSourceCode));
   }
 
+  @Test
   public void testPrimitiveArrayWarningFromParent() throws Exception {
     // If the array-valued property is defined by an ancestor then we shouldn't try to attach
     // the warning to the method that defined it, but rather to the @AutoValue class itself.
@@ -203,6 +212,7 @@ public class CompilationErrorsTest extends TestCase {
     assertCompilationResultIs(expectedDiagnostics, ImmutableList.of(testSourceCode));
   }
 
+  @Test
   public void testPrimitiveArrayWarningSuppressed() throws Exception {
     String testSourceCode = Joiner.on('\n').join(
         "package foo.bar;",

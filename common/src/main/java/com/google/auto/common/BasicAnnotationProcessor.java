@@ -35,7 +35,6 @@ import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
-
 import java.lang.annotation.Annotation;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -43,7 +42,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
@@ -66,7 +64,7 @@ import javax.lang.model.util.SimpleElementVisitor6;
  * access the {@link ProcessingEnvironment} using {@link #processingEnv}.
  *
  * Any logic that needs to happen once per round can be specified by overriding
- * {@link #postProcess()}.
+ * {@link #postRound(RoundEnvironment)}.
  *
  * <h3>Ill-formed elements are deferred</h3>
  * Any annotated element whose nearest enclosing type is not well-formed is deferred, and not passed
@@ -127,8 +125,20 @@ public abstract class BasicAnnotationProcessor extends AbstractProcessor {
    */
   protected abstract Iterable<? extends ProcessingStep> initSteps();
 
-  /** An optional hook for logic to be executed at the end of each round. */
+  /**
+   * An optional hook for logic to be executed at the end of each round.
+   *
+   * @deprecated use {@link #postRound(RoundEnvironment)} instead
+   */
+  @Deprecated
   protected void postProcess() {}
+
+  /** An optional hook for logic to be executed at the end of each round. */
+  protected void postRound(RoundEnvironment roundEnv) {
+    if (!roundEnv.processingOver()) {
+      postProcess();
+    }
+  }
 
   private ImmutableSet<? extends Class<? extends Annotation>> getSupportedAnnotationClasses() {
     checkState(steps != null);
@@ -164,13 +174,14 @@ public abstract class BasicAnnotationProcessor extends AbstractProcessor {
 
     // If this is the last round, report all of the missing elements
     if (roundEnv.processingOver()) {
+      postRound(roundEnv);
       reportMissingElements(deferredElements, elementsDeferredBySteps.values());
       return false;
     }
 
     process(validElements(deferredElements, roundEnv));
 
-    postProcess();
+    postRound(roundEnv);
 
     return false;
   }
@@ -315,7 +326,7 @@ public abstract class BasicAnnotationProcessor extends AbstractProcessor {
       if (stepElements.isEmpty()) {
         elementsDeferredBySteps.removeAll(step);
       } else {
-        Set<Element> rejectedElements = step.process(stepElements);
+        Set<? extends Element> rejectedElements = step.process(stepElements);
         elementsDeferredBySteps.replaceValues(
             step,
             transform(
@@ -418,13 +429,15 @@ public abstract class BasicAnnotationProcessor extends AbstractProcessor {
     Set<? extends Class<? extends Annotation>> annotations();
 
     /**
-     * The implementation of processing logic for the step. It is guaranteed that the keys in
-     * {@code elementsByAnnotation} will be a subset of the set returned by {@link #annotations()}.
+     * The implementation of processing logic for the step. It is guaranteed that the keys in {@code
+     * elementsByAnnotation} will be a subset of the set returned by {@link #annotations()}.
      *
-     * @return the elements that this step is unable to process, possibly until a later processing
-     *     round. These elements will be passed back to this step at the next round of processing.
+     * @return the elements (a subset of the values of {@code elementsByAnnotation}) that this step
+     *     is unable to process, possibly until a later processing round. These elements will be
+     *     passed back to this step at the next round of processing.
      */
-    Set<Element> process(SetMultimap<Class<? extends Annotation>, Element> elementsByAnnotation);
+    Set<? extends Element> process(
+        SetMultimap<Class<? extends Annotation>, Element> elementsByAnnotation);
   }
 
   /**

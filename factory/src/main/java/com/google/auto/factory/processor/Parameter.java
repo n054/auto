@@ -15,123 +15,72 @@
  */
 package com.google.auto.factory.processor;
 
-import static com.google.auto.common.MoreElements.isAnnotationPresent;
+import static com.google.auto.factory.processor.Mirrors.unwrapOptionalEquivalence;
+import static com.google.auto.factory.processor.Mirrors.wrapOptionalInEquivalence;
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.auto.common.MoreTypes;
-import com.google.common.base.Objects;
+import com.google.auto.common.AnnotationMirrors;
+import com.google.auto.value.AutoValue;
+import com.google.common.base.Equivalence;
+import com.google.common.base.Function;
 import com.google.common.base.Optional;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import java.util.List;
 import java.util.Set;
 import javax.inject.Provider;
-import javax.inject.Qualifier;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 
-// TODO(cgruber): AutoValue
-final class Parameter {
-  private final String type;
-  private final String name;
-  private final boolean providerOfType;
-  private final Key key;
+/**
+ * Model for a parameter from an {@link com.google.auto.factory.AutoFactory} constructor or
+ * implementation method.
+ */
+@AutoValue
+abstract class Parameter {
 
-  private Parameter(String type, Key key, String name, boolean providerOfType) {
-    this.type = checkNotNull(type);
-    this.key = checkNotNull(key);
-    this.name = checkNotNull(name);
-    this.providerOfType = providerOfType;
-  }
+  static final Function<Parameter, TypeMirror> TYPE = new Function<Parameter, TypeMirror>() {
+      @Override
+      public TypeMirror apply(Parameter parameter) {
+        return parameter.type();
+      }
+    };
 
-  String type() {
-    return type;
-  }
+  /**
+   * The original type of the parameter, while {@code key().type()} erases the wrapped {@link
+   * Provider}, if any.
+   */
+  abstract TypeMirror type();
 
-  Key key() {
-    return key;
-  }
+  /** The name of the parameter. */
+  abstract String name();
 
-  String name() {
-    return name;
-  }
+  abstract Key key();
+  abstract Optional<Equivalence.Wrapper<AnnotationMirror>> nullableWrapper();
 
-  boolean providerOfType() {
-    return providerOfType;
-  }
-
-  @Override
-  public boolean equals(Object obj) {
-    if (obj == this) {
-      return true;
-    } else if (obj instanceof Parameter) {
-      Parameter that = (Parameter) obj;
-      return this.type.equals(that.type)
-          && this.key.equals(that.key)
-          && this.name.equals(that.name)
-          && this.providerOfType == that.providerOfType;
-    } else {
-      return false;
-    }
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hashCode(type, key, name, providerOfType);
-  }
-
-  @Override
-  public String toString() {
-    StringBuilder builder = new StringBuilder().append('\'');
-    if (key.getQualifier().isPresent()) {
-      builder.append(key.getQualifier().get()).append(' ');
-    }
-    if (providerOfType) {
-      builder.append("Provider<");
-    }
-    builder.append(type);
-    if (providerOfType) {
-      builder.append('>');
-    }
-    builder.append(' ').append(name).append('\'');
-    return builder.toString();
+  Optional<AnnotationMirror> nullable() {
+    return unwrapOptionalEquivalence(nullableWrapper());
   }
 
   static Parameter forVariableElement(VariableElement variable, TypeMirror type, Types types) {
-    ImmutableSet.Builder<AnnotationMirror> qualifiers = ImmutableSet.builder();
-    for (AnnotationMirror annotationMirror : variable.getAnnotationMirrors()) {
-      DeclaredType annotationType = annotationMirror.getAnnotationType();
-      if (isAnnotationPresent(annotationType.asElement(), Qualifier.class)) {
-        qualifiers.add(annotationMirror);
+    Optional<AnnotationMirror> nullable = Optional.absent();
+    Iterable<? extends AnnotationMirror> annotations = variable.getAnnotationMirrors();
+    for (AnnotationMirror annotation : annotations) {
+      if (annotation.getAnnotationType().asElement().getSimpleName().contentEquals("Nullable")) {
+        nullable = Optional.of(annotation);
+        break;
       }
     }
 
-    boolean provider = MoreTypes.isType(type) && MoreTypes.isTypeOf(Provider.class, type);
-    TypeMirror providedType =
-        provider ? MoreTypes.asDeclared(type).getTypeArguments().get(0) : type;
-
-    // TODO(gak): check for only one qualifier rather than using the first
-    Optional<AnnotationMirror> qualifier = FluentIterable.from(qualifiers.build()).first();
-    Key key = new Key(qualifier, boxedType(providedType, types).toString());
-
-    return new Parameter(
-        providedType.toString(), key, variable.getSimpleName().toString(), provider);
-  }
-
-  /**
-   * If {@code type} is a primitive type, returns the boxed equivalent; otherwise returns
-   * {@code type}.
-   */
-  private static TypeMirror boxedType(TypeMirror type, Types types) {
-    return type.getKind().isPrimitive()
-        ? types.boxedClass(MoreTypes.asPrimitiveType(type)).asType()
-        : type;
+    Key key = Key.create(type, annotations, types);
+    return new AutoValue_Parameter(
+        type,
+        variable.getSimpleName().toString(),
+        key,
+        wrapOptionalInEquivalence(AnnotationMirrors.equivalence(), nullable));
   }
 
   static ImmutableSet<Parameter> forParameterList(
@@ -143,7 +92,7 @@ final class Parameter {
     Set<String> names = Sets.newHashSetWithExpectedSize(variables.size());
     for (int i = 0; i < variables.size(); i++) {
       Parameter parameter = forVariableElement(variables.get(i), variableTypes.get(i), types);
-      checkArgument(names.add(parameter.name));
+      checkArgument(names.add(parameter.name()));
       builder.add(parameter);
     }
     ImmutableSet<Parameter> parameters = builder.build();

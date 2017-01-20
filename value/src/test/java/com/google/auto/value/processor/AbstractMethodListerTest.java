@@ -1,19 +1,38 @@
+/*
+ * Copyright (C) 2013 Google Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.google.auto.value.processor;
 
-import junit.framework.TestCase;
+import static org.junit.Assert.assertEquals;
 
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.List;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * Tests for {@link AbstractMethodLister}.
  *
  * @author Éamonn McManus
  */
-public class AbstractMethodListerTest extends TestCase {
+@RunWith(JUnit4.class)
+public class AbstractMethodListerTest {
   /** Test class for the abstractNoArgMethods() test cases. */
-  public abstract class Abstract {
+  public abstract static class Abstract {
     abstract int foo();
     abstract String baz(int x);
     abstract boolean bar();
@@ -26,7 +45,7 @@ public class AbstractMethodListerTest extends TestCase {
   }
 
   /** Test class for the abstractNoArgMethods() test cases. */
-  abstract class AbstractSub extends Abstract {
+  abstract static class AbstractSub extends Abstract {
     @Override boolean bar() {
       return false;
     }
@@ -47,10 +66,12 @@ public class AbstractMethodListerTest extends TestCase {
     assertEquals(Arrays.asList(expectedMethods), methods);
   }
 
+  @Test
   public void testAbstractNoParent() throws Exception {
     testAbstractNoArgMethods(Abstract.class, "foo", "bar", "baz");
   }
 
+  @Test
   public void testAbstractWithParent() throws Exception {
     testAbstractNoArgMethods(AbstractSub.class, "buh");
   }

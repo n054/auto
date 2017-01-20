@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 The Guava Authors
+ * Copyright (C) 2014 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,6 @@ import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.testing.compile.JavaFileObjects;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.annotation.Retention;
@@ -35,7 +30,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Set;
-
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -44,6 +38,9 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 import javax.tools.JavaFileObject;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 /**
  * @author emcmanus@google.com (Éamonn McManus)
@@ -239,6 +236,31 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor())
         .failsToCompile()
         .withErrorContaining("Nested @AutoValue class must be static")
+        .in(javaFileObject).onLine(7);
+  }
+
+  @Test
+  public void autoValueMustBeNotBePrivate() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "",
+        "public class Baz {",
+        "  @AutoValue",
+        "  private abstract static class Private {",
+        "    public abstract String buh();",
+        "    public Private create(String buh) {",
+        "      return new AutoValue_Baz_Private(buh);",
+        "    }",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor())
+        .failsToCompile()
+        .withErrorContaining("@AutoValue class must not be private")
         .in(javaFileObject).onLine(7);
   }
 
@@ -535,14 +557,37 @@ public class CompilationTest {
   }
 
   @Test
+  public void nullablePrimitive() throws Exception {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz {",
+        "  @interface Nullable {}",
+        "  public abstract @Nullable int foo();",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor())
+        .failsToCompile()
+        .withErrorContaining("Primitive types cannot be @Nullable")
+        .in(javaFileObject).onLine(8);
+  }
+
+  @Test
   public void correctBuilder() throws Exception {
     JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
         "foo.bar.Baz",
         "package foo.bar;",
         "",
         "import com.google.auto.value.AutoValue;",
+        "import com.google.common.base.Optional;",
         "import com.google.common.collect.ImmutableList;",
         "",
+        "import java.util.ArrayList;",
         "import java.util.List;",
         "import javax.annotation.Nullable;",
         "",
@@ -555,21 +600,31 @@ public class CompilationTest {
         "  @Nullable public abstract int[] aNullableIntArray();",
         "  public abstract List<T> aList();",
         "  public abstract ImmutableList<T> anImmutableList();",
+        "  public abstract Optional<String> anOptionalString();",
         "",
         "  public abstract Builder<T> toBuilder();",
         "",
         "  @AutoValue.Builder",
-        "  public interface Builder<T extends Number> {",
-        "    Builder<T> anInt(int x);",
-        "    Builder<T> aByteArray(byte[] x);",
-        "    Builder<T> aNullableIntArray(@Nullable int[] x);",
-        "    Builder<T> aList(List<T> x);",
-        "    ImmutableList.Builder<T> anImmutableListBuilder();",
+        "  public abstract static class Builder<T extends Number> {",
+        "    public abstract Builder<T> anInt(int x);",
+        "    public abstract Builder<T> aByteArray(byte[] x);",
+        "    public abstract Builder<T> aNullableIntArray(@Nullable int[] x);",
+        "    public abstract Builder<T> aList(List<T> x);",
+        "    public abstract Builder<T> anImmutableList(List<T> x);",
+        "    public abstract ImmutableList.Builder<T> anImmutableListBuilder();",
+        "    public abstract Builder<T> anOptionalString(Optional<String> s);",
+        "    public abstract Builder<T> anOptionalString(String s);",
         "",
-        "    List<T> aList();",
-        "    ImmutableList<T> anImmutableList();",
+        "    public Builder<T> aList(ArrayList<T> x) {",
+             // ArrayList should not be imported in the generated class.
+        "      return aList((List<T>) x);",
+        "    }",
         "",
-        "    Baz<T> build();",
+        "    public abstract Optional<Integer> anInt();",
+        "    public abstract List<T> aList();",
+        "    public abstract ImmutableList<T> anImmutableList();",
+        "",
+        "    public abstract Baz<T> build();",
         "  }",
         "",
         "  public static <T extends Number> Builder<T> builder() {",
@@ -580,7 +635,8 @@ public class CompilationTest {
         "foo.bar.AutoValue_Baz",
         "package foo.bar;",
         "",
-        "import com.google.common.collect.ImmutableList",
+        "import com.google.common.base.Optional;",
+        "import com.google.common.collect.ImmutableList;",
         "import java.util.Arrays;",
         "import java.util.List;",
         "import javax.annotation.Generated;",
@@ -593,36 +649,33 @@ public class CompilationTest {
         "  private final int[] aNullableIntArray;",
         "  private final List<T> aList;",
         "  private final ImmutableList<T> anImmutableList;",
+        "  private final Optional<String> anOptionalString;",
         "",
         "  private AutoValue_Baz(",
         "      int anInt,",
         "      byte[] aByteArray,",
         "      @Nullable int[] aNullableIntArray,",
         "      List<T> aList,",
-        "      ImmutableList<T> anImmutableList) {",
+        "      ImmutableList<T> anImmutableList,",
+        "      Optional<String> anOptionalString) {",
         "    this.anInt = anInt;",
-        "    if (aByteArray == null) {",
-        "      throw new NullPointerException(\"Null aByteArray\");",
-        "    }",
         "    this.aByteArray = aByteArray;",
         "    this.aNullableIntArray = aNullableIntArray;",
-        "    if (aList == null) {",
-        "      throw new NullPointerException(\"Null aList\");",
-        "    }",
         "    this.aList = aList;",
         "    this.anImmutableList = anImmutableList;",
+        "    this.anOptionalString = anOptionalString;",
         "  }",
         "",
         "  @Override public int anInt() {",
         "    return anInt;",
         "  }",
         "",
-        "  @SuppressWarnings(value = {\"mutable\")",
+        "  @SuppressWarnings(value = {\"mutable\"})",
         "  @Override public byte[] aByteArray() {",
         "    return aByteArray;",
         "  }",
         "",
-        "  @SuppressWarnings(value = {\"mutable\")",
+        "  @SuppressWarnings(value = {\"mutable\"})",
         "  @Nullable",
         "  @Override public int[] aNullableIntArray() {",
         "    return aNullableIntArray;",
@@ -636,13 +689,18 @@ public class CompilationTest {
         "    return anImmutableList;",
         "  }",
         "",
+        "  @Override public Optional<String> anOptionalString() {",
+        "    return anOptionalString;",
+        "  }",
+        "",
         "  @Override public String toString() {",
         "    return \"Baz{\"",
         "        + \"anInt=\" + anInt + \", \"",
         "        + \"aByteArray=\" + Arrays.toString(aByteArray) + \", \"",
         "        + \"aNullableIntArray=\" + Arrays.toString(aNullableIntArray) + \", \"",
         "        + \"aList=\" + aList + \", \"",
-        "        + \"anImmutableList=\" + anImmutableList",
+        "        + \"anImmutableList=\" + anImmutableList + \", \"",
+        "        + \"anOptionalString=\" + anOptionalString",
         "        + \"}\";",
         "  }",
         "",
@@ -660,7 +718,8 @@ public class CompilationTest {
                     + "(that instanceof AutoValue_Baz) "
                         + "? ((AutoValue_Baz) that).aNullableIntArray : that.aNullableIntArray()))",
         "          && (this.aList.equals(that.aList()))",
-        "          && (this.anImmutableList.equals(that.anImmutableList()));",
+        "          && (this.anImmutableList.equals(that.anImmutableList()))",
+        "          && (this.anOptionalString.equals(that.anOptionalString()));",
         "    }",
         "    return false;",
         "  }",
@@ -677,6 +736,8 @@ public class CompilationTest {
         "    h ^= this.aList.hashCode();",
         "    h *= 1000003;",
         "    h ^= this.anImmutableList.hashCode();",
+        "    h *= 1000003;",
+        "    h ^= this.anOptionalString.hashCode();",
         "    return h;",
         "  }",
         "",
@@ -684,28 +745,41 @@ public class CompilationTest {
         "    return new Builder<T>(this);",
         "  }",
         "",
-        "  static final class Builder<T extends Number> implements Baz.Builder<T> {",
+        "  static final class Builder<T extends Number> extends Baz.Builder<T> {",
         "    private Integer anInt;",
         "    private byte[] aByteArray;",
         "    private int[] aNullableIntArray;",
         "    private List<T> aList;",
-        "    private ImmutableList.Builder<T> anImmutableList = ImmutableList.builder();",
+        "    private ImmutableList.Builder<T> anImmutableListBuilder$;",
+        "    private ImmutableList<T> anImmutableList;",
+        "    private Optional<String> anOptionalString = Optional.absent();",
         "",
         "    Builder() {",
+        "      this.anImmutableList = ImmutableList.of();",
         "    }",
         "",
-        "    Builder(Baz<T> source) {",
+        "    private Builder(Baz<T> source) {",
         "      this.anInt = source.anInt();",
         "      this.aByteArray = source.aByteArray();",
         "      this.aNullableIntArray = source.aNullableIntArray();",
         "      this.aList = source.aList();",
-        "      this.anImmutableList.addAll(source.anImmutableList());",
+        "      this.anImmutableList = source.anImmutableList();",
+        "      this.anOptionalString = source.anOptionalString();",
         "    }",
         "",
         "    @Override",
         "    public Baz.Builder<T> anInt(int anInt) {",
         "      this.anInt = anInt;",
         "      return this;",
+        "    }",
+        "",
+        "    @Override",
+        "    public Optional<Integer> anInt() {",
+        "      if (anInt == null) {",
+        "        return Optional.absent();",
+        "      } else {",
+        "        return Optional.of(anInt);",
+        "      }",
         "    }",
         "",
         "    @Override",
@@ -735,25 +809,62 @@ public class CompilationTest {
         "    }",
         "",
         "    @Override",
+        "    public Baz.Builder<T> anImmutableList(List<T> anImmutableList) {",
+        "      if (anImmutableListBuilder$ != null) {",
+        "        throw new IllegalStateException("
+                     + "\"Cannot set anImmutableList after calling anImmutableListBuilder()\");",
+        "      }",
+        "      this.anImmutableList = ImmutableList.copyOf(anImmutableList);",
+        "      return this;",
+        "    }",
+        "",
+        "    @Override",
         "    public ImmutableList.Builder<T> anImmutableListBuilder() {",
-        "      return anImmutableList;",
+        "      if (anImmutableListBuilder$ == null) {",
+        "        if (anImmutableList == null) {",
+        "          anImmutableListBuilder$ = ImmutableList.builder();",
+        "        } else {",
+        "          anImmutableListBuilder$ = ImmutableList.builder();",
+        "          anImmutableListBuilder$.addAll(anImmutableList);",
+        "          anImmutableList = null;",
+        "        }",
+        "      }",
+        "      return anImmutableListBuilder$;",
         "    }",
         "",
         "    @Override",
         "    public ImmutableList<T> anImmutableList() {",
-        "      return anImmutableList.build();",
+        "      if (anImmutableListBuilder$ != null) {",
+        "        return anImmutableListBuilder$.build();",
+        "      }",
+        "      return anImmutableList;",
+        "    }",
+        "",
+        "    @Override",
+        "    public Baz.Builder<T> anOptionalString(Optional<String> anOptionalString) {",
+        "      this.anOptionalString = anOptionalString;",
+        "      return this;",
+        "    }",
+        "",
+        "    @Override",
+        "    public Baz.Builder<T> anOptionalString(String anOptionalString) {",
+        "      this.anOptionalString = Optional.of(anOptionalString);",
+        "      return this;",
         "    }",
         "",
         "    @Override",
         "    public Baz<T> build() {",
+        "      if (anImmutableListBuilder$ != null) {",
+        "        this.anImmutableList = anImmutableListBuilder$.build();",
+        "      }",
         "      String missing = \"\";",
-        "      if (anInt == null) {",
+        "      if (this.anInt == null) {",
         "        missing += \" anInt\";",
         "      }",
-        "      if (aByteArray == null) {",
+        "      if (this.aByteArray == null) {",
         "        missing += \" aByteArray\";",
         "      }",
-        "      if (aList == null) {",
+        "      if (this.aList == null) {",
         "        missing += \" aList\";",
         "      }",
         "      if (!missing.isEmpty()) {",
@@ -764,7 +875,8 @@ public class CompilationTest {
         "          this.aByteArray,",
         "          this.aNullableIntArray,",
         "          this.aList,",
-        "          this.anImmutableList.build());",
+        "          this.anImmutableList,",
+        "          this.anOptionalString);",
         "    }",
         "  }",
         "}");
@@ -960,7 +1072,7 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "Parameter type of setter method should be int to match getter foo.bar.Baz.blim")
+            "Parameter type java.lang.String of setter method should be int to match getter foo.bar.Baz.blim")
         .in(javaFileObject).onLine(12);
   }
 
@@ -1057,7 +1169,40 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "Parameter type of setter method should be int to match getter foo.bar.Baz.getBlim")
+            "Parameter type java.lang.String of setter method should be int to match getter foo.bar.Baz.getBlim")
+        .in(javaFileObject).onLine(12);
+  }
+
+  // Check that we get a helpful error message if some of your properties look like getters but
+  // others don't.
+  @Test
+  public void autoValueBuilderBeansConfusion() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Item",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "",
+        "@AutoValue",
+        "public abstract class Item {",
+        "  abstract String getTitle();",
+        "  abstract boolean hasThumbnail();",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder {",
+        "    Builder setTitle(String title);",
+        "    Builder setHasThumbnail(boolean t);",
+        "    Item build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining("Method does not correspond to a property of foo.bar.Item")
+        .in(javaFileObject).onLine(12)
+        .and()
+        .withNoteContaining("hasThumbnail")
         .in(javaFileObject).onLine(12);
   }
 
@@ -1148,34 +1293,6 @@ public class CompilationTest {
   }
 
   @Test
-  public void autoValueBuilderPropertyBuilderAndSetter() {
-    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
-        "foo.bar.Baz",
-        "package foo.bar;",
-        "",
-        "import com.google.auto.value.AutoValue;",
-        "import com.google.common.collect.ImmutableSet;",
-        "",
-        "@AutoValue",
-        "public abstract class Baz {",
-        "  abstract ImmutableSet<String> blim();",
-        "",
-        "  @AutoValue.Builder",
-        "  public interface Builder {",
-        "    abstract ImmutableSet.Builder<String> blimBuilder();",
-        "    abstract Builder setBlim(ImmutableSet<String> blim);",
-        "    Baz build();",
-        "  }",
-        "}");
-    assertAbout(javaSource())
-        .that(javaFileObject)
-        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
-        .failsToCompile()
-        .withErrorContaining("Property blim cannot have both a setter and a builder")
-        .in(javaFileObject).onLine(11);
-  }
-
-  @Test
   public void autoValueBuilderPropertyBuilderInvalidType() {
     JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
         "foo.bar.Baz",
@@ -1198,37 +1315,9 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "Method looks like a property builder, but its return type is not a builder for an "
-                + "immutable type in com.google.common.collect")
+            "Method looks like a property builder, but it returns java.lang.StringBuilder which "
+                + "does not have a non-static build() method")
         .in(javaFileObject).onLine(11);
-  }
-
-  @Test
-  public void autoValueBuilderPropertyBuilderRawType() {
-    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
-        "foo.bar.Baz",
-        "package foo.bar;",
-        "",
-        "import com.google.auto.value.AutoValue;",
-        "import com.google.common.collect.ImmutableList;",
-        "",
-        "@AutoValue",
-        "public abstract class Baz<T, U> {",
-        "  abstract ImmutableList blim();",
-        "",
-        "  @AutoValue.Builder",
-        "  public interface Builder<T, U> {",
-        "    ImmutableList.Builder blimBuilder();",
-        "    Baz<T, U> build();",
-        "  }",
-        "}");
-    assertAbout(javaSource())
-        .that(javaFileObject)
-        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Property builder type cannot be raw (missing <...>)")
-        .in(javaFileObject).onLine(12);
   }
 
   @Test
@@ -1256,10 +1345,322 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "Return type of property-builder method implies a property of type "
-                + "com.google.common.collect.ImmutableSet<T>, but property blim has type "
-                + "com.google.common.collect.ImmutableList<T>")
+            "Property builder for blim has type com.google.common.collect.ImmutableSet.Builder "
+                + "whose build() method returns com.google.common.collect.ImmutableSet<T> "
+                + "instead of com.google.common.collect.ImmutableList<T>")
         .in(javaFileObject).onLine(13);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderWeirdBuilderType() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<T, U> {",
+        "  abstract Integer blim();",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<T, U> {",
+        "    int blimBuilder();",
+        "    Baz<T, U> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Method looks like a property builder, but its return type is not a class or interface")
+        .in(javaFileObject).onLine(12);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderWeirdBuiltType() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<T, U> {",
+        "  abstract int blim();",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<T, U> {",
+        "    Integer blimBuilder();",
+        "    Baz<T, U> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Method looks like a property builder, but the type of property blim is not a class "
+                + "or interface")
+        .in(javaFileObject).onLine(12);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderHasNoBuild() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<T, U> {",
+        "  abstract String blim();",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<T, U> {",
+        "    StringBuilder blimBuilder();",
+        "    Baz<T, U> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Method looks like a property builder, but it returns java.lang.StringBuilder which "
+                + "does not have a non-static build() method")
+        .in(javaFileObject).onLine(12);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderHasStaticBuild() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<T, U> {",
+        "  abstract String blim();",
+        "",
+        "  public static class StringFactory {",
+        "    public static String build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<T, U> {",
+        "    StringFactory blimBuilder();",
+        "    Baz<T, U> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Method looks like a property builder, but it returns foo.bar.Baz.StringFactory which "
+                + "does not have a non-static build() method")
+        .in(javaFileObject).onLine(18);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderReturnsWrongType() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "import java.util.List;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<E> {",
+        "  abstract List<E> blim();",
+        "",
+        "  public static class ListFactory<E> {",
+        "    public List<? extends E> build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<E> {",
+        "    ListFactory<E> blimBuilder();",
+        "    Baz<E> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Property builder for blim has type foo.bar.Baz.ListFactory whose build() method "
+                + "returns java.util.List<? extends E> instead of java.util.List<E>")
+        .in(javaFileObject).onLine(19);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderCantConstruct() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<E> {",
+        "  abstract String blim();",
+        "",
+        "  public static class StringFactory {",
+        "    private StringFactory() {}",
+        "",
+        "    public String build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<E> {",
+        "    StringFactory blimBuilder();",
+        "    Baz<E> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Method looks like a property builder, but its type foo.bar.Baz.StringFactory "
+                + "does not have a public constructor and java.lang.String does not have a static "
+                + "builder() or newBuilder() method that returns foo.bar.Baz.StringFactory")
+        .in(javaFileObject).onLine(20);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderCantReconstruct() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<E> {",
+        "  abstract String blim();",
+        "  abstract Builder toBuilder();",
+        "",
+        "  public static class StringFactory {",
+        "    public String build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<E> {",
+        "    StringFactory blimBuilder();",
+        "    Baz<E> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Property builder method returns Baz.StringFactory but there is no way to make "
+                + "that type from String: String does not have a non-static "
+                + "toBuilder() method that returns Baz.StringFactory")
+        .in(javaFileObject).onLine(19);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderCantSet() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<E> {",
+        "  abstract String blim();",
+        "",
+        "  public static class StringFactory {",
+        "    public String build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<E> {",
+        "    Builder<E> setBlim(String s);",
+        "    StringFactory blimBuilder();",
+        "    Baz<E> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Property builder method returns Baz.StringFactory but there is no way to make "
+                + "that type from String: String does not have a non-static "
+                + "toBuilder() method that returns Baz.StringFactory")
+        .in(javaFileObject).onLine(19);
+  }
+
+  @Test
+  public void autoValueBuilderPropertyBuilderWrongTypeToBuilder() {
+    JavaFileObject javaFileObject = JavaFileObjects.forSourceLines(
+        "foo.bar.Baz",
+        "package foo.bar;",
+        "",
+        "import com.google.auto.value.AutoValue;",
+        "import com.google.common.collect.ImmutableSet;",
+        "",
+        "@AutoValue",
+        "public abstract class Baz<E> {",
+        "  abstract Buh blim();",
+        "  abstract Builder<E> toBuilder();",
+        "",
+        "  public static class Buh {",
+        "    StringBuilder toBuilder() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  public static class BuhBuilder {",
+        "    public Buh build() {",
+        "      return null;",
+        "    }",
+        "  }",
+        "",
+        "  @AutoValue.Builder",
+        "  public interface Builder<E> {",
+        "    BuhBuilder blimBuilder();",
+        "    Baz<E> build();",
+        "  }",
+        "}");
+    assertAbout(javaSource())
+        .that(javaFileObject)
+        .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
+        .failsToCompile()
+        .withErrorContaining(
+            "Property builder method returns Baz.BuhBuilder but there is no way to make "
+                + "that type from Baz.Buh: Baz.Buh does not have a non-static "
+                + "toBuilder() method that returns Baz.BuhBuilder")
+        .in(javaFileObject).onLine(25);
   }
 
   @Test
@@ -1286,9 +1687,9 @@ public class CompilationTest {
         .processedWith(new AutoValueProcessor(), new AutoValueBuilderProcessor())
         .failsToCompile()
         .withErrorContaining(
-            "Return type of property-builder method implies a property of type "
-                + "com.google.common.collect.ImmutableSet<U>, but property blim has type "
-                + "com.google.common.collect.ImmutableSet<T>")
+            "Property builder for blim has type com.google.common.collect.ImmutableSet.Builder "
+                + "whose build() method returns com.google.common.collect.ImmutableSet<U> "
+                + "instead of com.google.common.collect.ImmutableSet<T>")
         .in(javaFileObject).onLine(12);
   }
 

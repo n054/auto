@@ -26,13 +26,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.common.truth.Expect;
 import com.google.testing.compile.CompilationRule;
-
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -41,7 +34,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
-
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -53,6 +45,11 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
 
 @RunWith(JUnit4.class)
 public class MoreElementsTest {
@@ -73,7 +70,6 @@ public class MoreElementsTest {
 
   @Test
   public void getPackage() {
-    assertThat(javaLangPackageElement).isEqualTo(javaLangPackageElement);
     assertThat(MoreElements.getPackage(stringElement)).isEqualTo(javaLangPackageElement);
     for (Element childElement : stringElement.getEnclosedElements()) {
       assertThat(MoreElements.getPackage(childElement)).isEqualTo(javaLangPackageElement);
@@ -232,12 +228,13 @@ public class MoreElementsTest {
   }
 
   @Test
-  public void getLocalAndInheritedMethods() {
+  public void getLocalAndInheritedMethods_Old() {
     Elements elements = compilation.getElements();
     Types types = compilation.getTypes();
     TypeMirror intMirror = types.getPrimitiveType(TypeKind.INT);
     TypeMirror longMirror = types.getPrimitiveType(TypeKind.LONG);
     TypeElement childType = elements.getTypeElement(Child.class.getCanonicalName());
+    @SuppressWarnings("deprecation")
     Set<ExecutableElement> childTypeMethods =
         MoreElements.getLocalAndInheritedMethods(childType, elements);
     Set<ExecutableElement> objectMethods = visibleMethodsFromObject();
@@ -250,6 +247,63 @@ public class MoreElementsTest {
         getMethod(Child.class, "baz"),
         getMethod(Child.class, "buh", intMirror),
         getMethod(Child.class, "buh", intMirror, intMirror));
+  }
+
+  @Test
+  public void getLocalAndInheritedMethods() {
+    Elements elements = compilation.getElements();
+    Types types = compilation.getTypes();
+    TypeMirror intMirror = types.getPrimitiveType(TypeKind.INT);
+    TypeMirror longMirror = types.getPrimitiveType(TypeKind.LONG);
+    TypeElement childType = elements.getTypeElement(Child.class.getCanonicalName());
+    @SuppressWarnings("deprecation")
+    Set<ExecutableElement> childTypeMethods =
+        MoreElements.getLocalAndInheritedMethods(childType, types, elements);
+    Set<ExecutableElement> objectMethods = visibleMethodsFromObject();
+    assertThat(childTypeMethods).containsAllIn(objectMethods);
+    Set<ExecutableElement> nonObjectMethods = Sets.difference(childTypeMethods, objectMethods);
+    assertThat(nonObjectMethods).containsExactly(
+        getMethod(ParentClass.class, "foo"),
+        getMethod(ParentInterface.class, "bar", longMirror),
+        getMethod(Child.class, "bar"),
+        getMethod(Child.class, "baz"),
+        getMethod(Child.class, "buh", intMirror),
+        getMethod(Child.class, "buh", intMirror, intMirror));
+  }
+
+  static class Injectable {}
+
+  public static class MenuManager {
+    public interface ParentComponent extends MenuItemA.ParentComponent, MenuItemB.ParentComponent {}
+  }
+
+  public static class MenuItemA {
+    public interface ParentComponent {
+      Injectable injectable();
+    }
+  }
+
+  public static class MenuItemB {
+    public interface ParentComponent {
+      Injectable injectable();
+    }
+  }
+
+  public static class Main {
+    public interface ParentComponent extends MenuManager.ParentComponent {}
+  }
+
+  // Example from https://github.com/williamlian/daggerbug
+  @Test
+  public void getLocalAndInheritedMethods_DaggerBug() {
+    Elements elementUtils = compilation.getElements();
+    TypeElement main = elementUtils.getTypeElement(Main.ParentComponent.class.getCanonicalName());
+    Set<ExecutableElement> methods = MoreElements.getLocalAndInheritedMethods(
+        main, compilation.getTypes(), elementUtils);
+    assertThat(methods).hasSize(1);
+    ExecutableElement method = methods.iterator().next();
+    assertThat(method.getSimpleName().toString()).isEqualTo("injectable");
+    assertThat(method.getParameters()).isEmpty();
   }
 
   private Set<ExecutableElement> visibleMethodsFromObject() {

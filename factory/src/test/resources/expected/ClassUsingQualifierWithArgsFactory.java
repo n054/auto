@@ -15,20 +15,25 @@
  */
 package tests;
 
+import com.google.auto.factory.internal.Preconditions;
 import javax.annotation.Generated;
 import javax.inject.Inject;
 import javax.inject.Provider;
 
-@Generated("com.google.auto.factory.processor.AutoFactoryProcessor")
+@Generated(
+  value = "com.google.auto.factory.processor.AutoFactoryProcessor",
+  comments = "https://github.com/google/auto/tree/master/factory"
+  )
 final class ClassUsingQualifierWithArgsFactory {
   private final Provider<String> providedDepAProvider;
 
   @Inject ClassUsingQualifierWithArgsFactory(
       @QualifierWithArgs(name="Fred", count=3) Provider<String> providedDepAProvider) {
-    this.providedDepAProvider = providedDepAProvider;
+    this.providedDepAProvider = Preconditions.checkNotNull(providedDepAProvider, 1);
   }
 
   ClassUsingQualifierWithArgs create() {
-    return new ClassUsingQualifierWithArgs(providedDepAProvider.get());
+    return new ClassUsingQualifierWithArgs(
+        Preconditions.checkNotNull(providedDepAProvider.get(), 1));
   }
 }

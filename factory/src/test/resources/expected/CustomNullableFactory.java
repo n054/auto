@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Google, Inc.
+ * Copyright (C) 2016 Google, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,25 @@
  */
 package tests;
 
+import com.google.auto.factory.internal.Preconditions;
 import javax.annotation.Generated;
 import javax.inject.Inject;
 import javax.inject.Provider;
 
-import tests.FactoryImplementingGenericInterfaceExtension.MyFactory;
+@Generated(
+  value = "com.google.auto.factory.processor.AutoFactoryProcessor",
+  comments = "https://github.com/google/auto/tree/master/factory"
+  )
+final class CustomNullableFactory {
 
-@Generated("com.google.auto.factory.processor.AutoFactoryProcessor")
-final class FactoryImplementingGenericInterfaceExtensionFactory
-    implements MyFactory {
-  private final Provider<String> sProvider;
+  private final Provider<Object> objectProvider;
+
   @Inject
-  FactoryImplementingGenericInterfaceExtensionFactory(Provider<String> sProvider) {
-    this.sProvider = sProvider;
+  CustomNullableFactory(Provider<Object> objectProvider) {
+    this.objectProvider = Preconditions.checkNotNull(objectProvider, 1);
   }
-  FactoryImplementingGenericInterfaceExtension create(Integer i) {
-    return new FactoryImplementingGenericInterfaceExtension(sProvider.get(), i);
-  }
-  @Override
-  public FactoryImplementingGenericInterfaceExtension make(Integer arg) {
-    return create(arg);
+
+  CustomNullable create(@CustomNullable.Nullable String string) {
+    return new CustomNullable(string, objectProvider.get());
   }
 }
